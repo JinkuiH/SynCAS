@@ -1,2 +1,2 @@
-# SynSegCA
-Pytorch implementation of SynSegCA
+# SynCAS
+Pytorch implementation of SynCAS
