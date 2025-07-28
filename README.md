@@ -57,8 +57,6 @@ pip install -r requirements.txt
    python inference.py
    ```
 
-    **Note:** Custom NCCT normalization is handled in `inference.py` (around **line 105**).
-
 ---
 
 ##  Synthetic Dataset Generation
