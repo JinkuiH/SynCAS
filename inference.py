@@ -34,7 +34,7 @@ from tqdm import tqdm
 from time import sleep
 import gc
 from os.path import join
-#import psutil  # 用于内存监控（可选）
+#import psutil
 
 default_num_processes = 2
 
@@ -253,18 +253,10 @@ class InferencePreprocessor(object):
         return data, seg, data_properties
     
     def predict_NCCT_from_nested_folders(self, root_folder: str, save_probabilities: bool = False):
-        """
-        遍历 root_folder 下的所有子文件夹，自动预测以 NCCT.nii.gz 结尾的图像文件，
-        并将结果保存至对应子文件夹中，输出文件名前加 CA_。
-
-        Args:
-            root_folder (str): 包含待处理子文件夹的根目录。
-            save_probabilities (bool): 是否保存概率图（可选）。
-        """
+      
         image_file_lists = []
         output_paths = []
 
-        # 遍历子目录，查找以 NCCT.nii.gz 结尾的文件
         for subdir, _, files in os.walk(root_folder):
             for file in files:
                 if file.endswith("NCCT.nii.gz"):
@@ -272,17 +264,16 @@ class InferencePreprocessor(object):
                     output_filename = f"CA_{file}"
                     output_path = os.path.join(subdir, output_filename)
 
-                    image_file_lists.append(input_path)  # 需要是 list of list[str]
+                    image_file_lists.append(input_path) 
                     output_paths.append(output_path)
 
         if not image_file_lists:
             print("No NCCT.nii.gz files found.")
             return
 
-        self.output_folder = ''  # 让 export_prediction_from_logits 使用传入的完整路径保存
+        self.output_folder = ''  
         data_iterator = self.get_image_iter(image_file_lists, self.plans)
 
-        # 覆盖每个 data_iterator 中的 'ofile' 字段为实际输出路径
         for i in range(len(data_iterator)):
             data_iterator[i]['ofile'] = output_paths[i]
 
@@ -404,12 +395,10 @@ class InferencePreprocessor(object):
                 data = preprocessed['data']
                 properties = preprocessed['data_properties']
                 
-                # 模型推理
                 prediction = self.predict_logits_from_preprocessed_data(data).cpu()
 
                 if len(output_paths) > 1:
                     ofile = output_paths[i]
-                    # 异步导出
                     results.append(
                         export_pool.starmap_async(
                             export_prediction_from_logits,
@@ -427,25 +416,19 @@ class InferencePreprocessor(object):
 
                 
 
-                # 控制 export 队列长度
                 while check_workers_alive_and_busy(export_pool, worker_list, results, allowed_num_queued=1):
                     sleep(0.1)
 
-                # 强制释放内存
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 gc.collect()
 
-                # 可选: 打印内存使用
                 # process = psutil.Process(os.getpid())
                 # print(f"Memory usage: {process.memory_info().rss / (1024 ** 3):.2f} GB")
 
-            # 等待所有导出完成
             final_results = []
             for future in tqdm(results, desc="Exporting predictions", unit="case"):
                 final_results.append(future.get()[0])
-
-        # 清理缓存
         compute_gaussian.cache_clear()
         empty_cache(self.device)
 
@@ -677,13 +660,6 @@ class InferencePreprocessor(object):
         return prediction
      
     def predict_logits_from_preprocessed_data(self, data: torch.Tensor) -> torch.Tensor:
-        """
-        IMPORTANT! IF YOU ARE RUNNING THE CASCADE, THE SEGMENTATION FROM THE PREVIOUS STAGE MUST ALREADY BE STACKED ON
-        TOP OF THE IMAGE AS ONE-HOT REPRESENTATION! SEE PreprocessAdapter ON HOW THIS SHOULD BE DONE!
-
-        RETURNED LOGITS HAVE THE SHAPE OF THE INPUT. THEY MUST BE CONVERTED BACK TO THE ORIGINAL IMAGE SIZE.
-        SEE convert_predicted_logits_to_segmentation_with_correct_shape
-        """
         n_threads = torch.get_num_threads()
         torch.set_num_threads(default_num_processes if default_num_processes < n_threads else n_threads)
         prediction = None
@@ -728,39 +704,28 @@ class InferencePreprocessor(object):
         metric_keys = ['Dice', 'IoU', 'HD95', 'MSD', 'Agatston_Ref', 'Agatston_Pred',
                     'FP', 'TP', 'FN', 'TN', 'n_pred', 'n_ref','clDice', 'clPrecision', 'clRecall']
 
-        # 初始化每个指标的值列表
         values = {k: [] for k in metric_keys}
 
-        # 用于 Macro 计算的单样本指标列表
         precision_list = []
         recall_list = []
         specificity_list = []
         f1_list = []
 
-        eps = 1e-8  # 防止除以零
+        eps = 1e-8 
 
         for item in metrics['metric_per_case']:
-            m = item['metrics'][1]  # 假设你关心类别1
+            m = item['metrics'][1] 
 
             for k in metric_keys:
                 # print(m.get('Dice', 0))
                 val = m.get(k, 0)
-
-                # 特殊处理 nan 的情况
-                if k in ['Dice', 'IoU']:
-                    val = 1.0 if val != val else val  # nan -> 1.0
-                elif k in ['HD95', 'MSD']:
-                    val = 0.0 if val != val else val  # nan -> 0.0
-
                 values[k].append(val)
 
-            # 获取单样本 TP, FP, FN, TN
             TP = m.get('TP', 0)
             FP = m.get('FP', 0)
             FN = m.get('FN', 0)
             TN = m.get('TN', 0)
 
-            # 每个样本的指标
             precision = TP / (TP + FP + eps)
             recall = TP / (TP + FN + eps)
             specificity = TN / (TN + FP + eps)
@@ -771,23 +736,18 @@ class InferencePreprocessor(object):
             specificity_list.append(specificity)
             f1_list.append(f1)
 
-        # 计算均值和标准差
         averages = {k: float(np.mean(values[k])) for k in metric_keys}
-        stds = {k: float(np.std(values[k], ddof=1)) for k in metric_keys}  # 样本标准差
+        stds = {k: float(np.std(values[k], ddof=1)) for k in metric_keys} 
 
-        # 添加 Macro-average 指标
         averages['Precision'] = float(np.mean(precision_list))
         averages['Recall'] = float(np.mean(recall_list))
         averages['Specificity'] = float(np.mean(specificity_list))
         averages['F1'] = float(np.mean(f1_list))
 
-        # 添加 Macro-average 指标 (标准差)
         stds['Precision'] = float(np.std(precision_list, ddof=1))
         stds['Recall'] = float(np.std(recall_list, ddof=1))
         stds['Specificity'] = float(np.std(specificity_list, ddof=1))
         stds['F1'] = float(np.std(f1_list, ddof=1))
-
-        
 
         return averages, stds
     
