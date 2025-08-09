@@ -930,23 +930,18 @@ class trainingPlanner(object):
             print("Mean Validation MSD: ", (metrics['foreground_mean']["MSD"]))
 
     def save_results_to_csv(self, results, output_file):
-        # 定义CSV文件的表头
         headers = ['reference_file', 'Agatston_Ref', 'Agatston_Pred']
 
-        # 打开CSV文件准备写入
         with open(output_file, mode='w', newline='') as file:
             writer = csv.writer(file)
             
-            # 写入表头
             writer.writerow(headers)
             
-            # 遍历每个结果项并提取所需字段
             for item in results:
                 reference_file = item['reference_file']
                 agatston_ref = item['metrics'][1]['Agatston_Ref']
                 agatston_pred = item['metrics'][1]['Agatston_Pred']
                 
-                # 写入CSV文件的一行
                 writer.writerow([os.path.basename(reference_file), agatston_ref, agatston_pred])
 
     def start_train(self):
@@ -974,7 +969,7 @@ class trainingPlanner(object):
                 f"Current learning rate: {np.round(self.optimizer.param_groups[0]['lr'], decimals=5)}")
             
             
-            # loss_weight = float(self.normal_weight)  # 转换为 Python float
+            # loss_weight = float(self.normal_weight) 
             # self.print_to_log_file(f"Current loss weight for Ctrl: {loss_weight:.5f}")
             
             # lrs are the same for all workers so we don't need to gather them in case of DDP training
